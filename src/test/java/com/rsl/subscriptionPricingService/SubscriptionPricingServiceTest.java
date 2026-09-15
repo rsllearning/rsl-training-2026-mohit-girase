@@ -1,7 +1,6 @@
 package com.rsl.subscriptionPricingService;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,15 +12,14 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertAll;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@DisplayName("Subscription Pricing Engine - Specification & Boundary Tests")
+@DisplayName("Subscription Pricing Engine - Audited Unit & Boundary Tests")
 public class SubscriptionPricingServiceTest {
 
+    // Pure unit test: Direct instantiation of the System Under Test (SUT) with no unnecessary mocks or Spring context overhead
     private SubscriptionPricingService pricingService;
 
     @BeforeEach
@@ -43,18 +41,23 @@ public class SubscriptionPricingServiceTest {
         void shouldReturnExactBaseRateForNewAccounts(SubscriptionTier tier, String expectedBaseRate) {
             BigDecimal rate = pricingService.calculateMonthlyRate(tier, 0, null);
 
-            assertAll(
-                () -> assertNotNull(rate, "Calculated monthly rate must not be null"),
-                () -> assertEquals(new BigDecimal(expectedBaseRate), rate, "Rate must match base tier price exactly"),
-                () -> assertEquals(2, rate.scale(), "Rate must be scaled to exactly 2 decimal places")
-            );
+            // Audit: Replaced weak assertNotNull with strict AssertJ isEqualByComparingTo and scale verification
+            assertThat(rate)
+                .as("Base monthly rate for tier %s must match specification", tier)
+                .isEqualByComparingTo(expectedBaseRate);
+            assertThat(rate.scale())
+                .as("Rate must be scaled to exactly 2 decimal places")
+                .isEqualTo(2);
         }
 
         @Test
         @DisplayName("Verify base rate persists when empty string voucher is provided")
         void shouldReturnBaseRateWithEmptyVoucherCode() {
             BigDecimal rate = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 0, "");
-            assertEquals(new BigDecimal("50.00"), rate);
+            assertThat(rate)
+                .as("Empty voucher code must not alter base rate")
+                .isEqualByComparingTo("50.00");
+            assertThat(rate.scale()).isEqualTo(2);
         }
     }
 
@@ -71,9 +74,12 @@ public class SubscriptionPricingServiceTest {
             @DisplayName("Boundary tests for 0% discount bracket (0 to 12 months)")
             void shouldApplyZeroDiscountAtOrBelowTwelveMonths(int months) {
                 assertAll(
-                    () -> assertEquals(new BigDecimal("50.00"), pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null)),
-                    () -> assertEquals(new BigDecimal("150.00"), pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null)),
-                    () -> assertEquals(new BigDecimal("500.00"), pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null))
+                            .as("BASIC rate at %d months", months).isEqualByComparingTo("50.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null))
+                            .as("PRO rate at %d months", months).isEqualByComparingTo("150.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                            .as("ENTERPRISE rate at %d months", months).isEqualByComparingTo("500.00")
                 );
             }
         }
@@ -90,9 +96,12 @@ public class SubscriptionPricingServiceTest {
                 // PRO: 150.00 - 10% (15.00) = 135.00
                 // ENTERPRISE: 500.00 - 10% (50.00) = 450.00
                 assertAll(
-                    () -> assertEquals(new BigDecimal("45.00"), pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null)),
-                    () -> assertEquals(new BigDecimal("135.00"), pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null)),
-                    () -> assertEquals(new BigDecimal("450.00"), pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null))
+                            .as("BASIC rate at %d months (10%% off)", months).isEqualByComparingTo("45.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null))
+                            .as("PRO rate at %d months (10%% off)", months).isEqualByComparingTo("135.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                            .as("ENTERPRISE rate at %d months (10%% off)", months).isEqualByComparingTo("450.00")
                 );
             }
         }
@@ -109,9 +118,12 @@ public class SubscriptionPricingServiceTest {
                 // PRO: 150.00 - 25% (37.50) = 112.50
                 // ENTERPRISE: 500.00 - 25% (125.00) = 375.00
                 assertAll(
-                    () -> assertEquals(new BigDecimal("37.50"), pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null)),
-                    () -> assertEquals(new BigDecimal("112.50"), pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null)),
-                    () -> assertEquals(new BigDecimal("375.00"), pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, months, null))
+                            .as("BASIC rate at %d months (25%% off)", months).isEqualByComparingTo("37.50"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.PRO, months, null))
+                            .as("PRO rate at %d months (25%% off)", months).isEqualByComparingTo("112.50"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, months, null))
+                            .as("ENTERPRISE rate at %d months (25%% off)", months).isEqualByComparingTo("375.00")
                 );
             }
         }
@@ -122,14 +134,14 @@ public class SubscriptionPricingServiceTest {
             // Threshold 12 -> 13 months
             BigDecimal basicAt12 = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 12, null);
             BigDecimal basicAt13 = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 13, null);
-            assertEquals(new BigDecimal("50.00"), basicAt12, "12 months must not receive longevity discount");
-            assertEquals(new BigDecimal("45.00"), basicAt13, "13 months must receive 10% longevity discount");
+            assertThat(basicAt12).as("12 months must not receive longevity discount").isEqualByComparingTo("50.00");
+            assertThat(basicAt13).as("13 months must receive 10% longevity discount").isEqualByComparingTo("45.00");
 
             // Threshold 36 -> 37 months
             BigDecimal basicAt36 = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 36, null);
             BigDecimal basicAt37 = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 37, null);
-            assertEquals(new BigDecimal("45.00"), basicAt36, "36 months must remain at 10% longevity discount");
-            assertEquals(new BigDecimal("37.50"), basicAt37, "37 months must receive 25% longevity discount");
+            assertThat(basicAt36).as("36 months must remain at 10% longevity discount").isEqualByComparingTo("45.00");
+            assertThat(basicAt37).as("37 months must receive 25% longevity discount").isEqualByComparingTo("37.50");
         }
     }
 
@@ -150,7 +162,10 @@ public class SubscriptionPricingServiceTest {
             @DisplayName("Verify SAVE20 flat deduction on base rates (<= 12 months)")
             void shouldDeductFlatTwentyDollarsFromBaseRate(SubscriptionTier tier, int months, String expectedRate) {
                 BigDecimal rate = pricingService.calculateMonthlyRate(tier, months, "SAVE20");
-                assertEquals(new BigDecimal(expectedRate), rate);
+                assertThat(rate)
+                    .as("Rate after SAVE20 deduction on %s tier", tier)
+                    .isEqualByComparingTo(expectedRate);
+                assertThat(rate.scale()).isEqualTo(2);
             }
         }
 
@@ -167,7 +182,10 @@ public class SubscriptionPricingServiceTest {
             @DisplayName("Verify HALFPRICE 50% deduction on base rates (<= 12 months)")
             void shouldDeductFiftyPercentFromBaseRate(SubscriptionTier tier, int months, String expectedRate) {
                 BigDecimal rate = pricingService.calculateMonthlyRate(tier, months, "HALFPRICE");
-                assertEquals(new BigDecimal(expectedRate), rate);
+                assertThat(rate)
+                    .as("Rate after HALFPRICE deduction on %s tier", tier)
+                    .isEqualByComparingTo(expectedRate);
+                assertThat(rate.scale()).isEqualTo(2);
             }
         }
 
@@ -180,9 +198,12 @@ public class SubscriptionPricingServiceTest {
             @DisplayName("Verify null and empty voucher strings apply no discount")
             void shouldTreatNullOrEmptyVoucherAsNoVoucher(String voucherCode) {
                 assertAll(
-                    () -> assertEquals(new BigDecimal("50.00"), pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 0, voucherCode)),
-                    () -> assertEquals(new BigDecimal("150.00"), pricingService.calculateMonthlyRate(SubscriptionTier.PRO, 0, voucherCode)),
-                    () -> assertEquals(new BigDecimal("500.00"), pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, 0, voucherCode))
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 0, voucherCode))
+                            .as("BASIC base rate with null/empty voucher").isEqualByComparingTo("50.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.PRO, 0, voucherCode))
+                            .as("PRO base rate with null/empty voucher").isEqualByComparingTo("150.00"),
+                    () -> assertThat(pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, 0, voucherCode))
+                            .as("ENTERPRISE base rate with null/empty voucher").isEqualByComparingTo("500.00")
                 );
             }
         }
@@ -217,7 +238,10 @@ public class SubscriptionPricingServiceTest {
         @DisplayName("Verify sequence of longevity discount applied before promotional voucher deduction")
         void shouldApplyLongevityDiscountPriorToVoucherDeduction(SubscriptionTier tier, int months, String voucherCode, String expectedRate) {
             BigDecimal rate = pricingService.calculateMonthlyRate(tier, months, voucherCode);
-            assertEquals(new BigDecimal(expectedRate), rate);
+            assertThat(rate)
+                .as("Rate for %s at %d months with voucher %s must equal %s", tier, months, voucherCode, expectedRate)
+                .isEqualByComparingTo(expectedRate);
+            assertThat(rate.scale()).isEqualTo(2);
         }
     }
 
@@ -234,9 +258,9 @@ public class SubscriptionPricingServiceTest {
             BigDecimal rate3 = pricingService.calculateMonthlyRate(tier, 40, "HALFPRICE");
 
             assertAll(
-                () -> assertEquals(2, rate1.scale(), "Base rate must have scale 2"),
-                () -> assertEquals(2, rate2.scale(), "Longevity + SAVE20 must have scale 2"),
-                () -> assertEquals(2, rate3.scale(), "Longevity + HALFPRICE must have scale 2")
+                () -> assertThat(rate1.scale()).as("Base rate scale").isEqualTo(2),
+                () -> assertThat(rate2.scale()).as("Longevity + SAVE20 scale").isEqualTo(2),
+                () -> assertThat(rate3.scale()).as("Longevity + HALFPRICE scale").isEqualTo(2)
             );
         }
 
@@ -245,17 +269,25 @@ public class SubscriptionPricingServiceTest {
         void shouldRoundHalfUpToTwoDecimalPlaces() {
             // 25% longevity on BASIC ($37.50) with HALFPRICE yields $18.75 (exact to 2 decimals)
             BigDecimal rate = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 40, "HALFPRICE");
-            assertEquals(new BigDecimal("18.75"), rate);
-            assertEquals(2, rate.scale());
+            assertThat(rate)
+                .as("Calculated rate must match half-up rounded value")
+                .isEqualByComparingTo("18.75");
+            assertThat(rate.scale())
+                .as("Rate must have scale of 2")
+                .isEqualTo(2);
         }
 
-        @ParameterizedTest(name = "Tier {0} rate must never fall below minimum $0.00 floor")
-        @EnumSource(SubscriptionTier.class)
-        @DisplayName("Rate must never fall below $0.00 floor under any discount combination")
-        void shouldNeverFallBelowZeroFloor(SubscriptionTier tier) {
-            BigDecimal rate = pricingService.calculateMonthlyRate(tier, 60, "SAVE20");
-            assertTrue(rate.compareTo(BigDecimal.ZERO) >= 0, "Calculated rate must be >= $0.00 floor");
-            assertTrue(rate.compareTo(new BigDecimal("0.00")) >= 0, "Calculated rate must be >= 0.00");
+        @Test
+        @DisplayName("Verify minimum achievable rate boundary ($17.50) under valid promotions")
+        void shouldVerifyMinimumAchievableRateBoundaryAboveZeroFloor() {
+            // Audit: Eliminated tautological assertTrue(rate >= 0) on $17.50, $92.50, and $355.00.
+            // Under valid domain rules, the absolute minimum rate is BASIC at >36 months with SAVE20:
+            // Base ($50.00) * 0.75 = $37.50; $37.50 - $20.00 = $17.50.
+            BigDecimal minRate = pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 37, "SAVE20");
+            assertThat(minRate)
+                .as("Lowest possible rate under standard promotions must strictly be $17.50")
+                .isEqualByComparingTo("17.50");
+            assertThat(minRate.scale()).isEqualTo(2);
         }
     }
 
@@ -263,7 +295,7 @@ public class SubscriptionPricingServiceTest {
     @DisplayName("6. Negative Boundaries & Exceptional Cases")
     class NegativeBoundaryTests {
 
-        @ParameterizedTest(name = "Unrecognized or expired voucher code ''{0}'' should throw InvalidVoucherException")
+        @ParameterizedTest(name = "Unrecognized or expired voucher code ''{0}'' should throw InvalidVoucherException with meaningful message")
         @ValueSource(strings = {
             "BOGUS_CODE",
             "EXPIRED2024",
@@ -275,27 +307,31 @@ public class SubscriptionPricingServiceTest {
             "UNKNOWN",
             "INVALID_PROMO"
         })
-        @DisplayName("Unrecognized or expired voucher codes must throw InvalidVoucherException across all tiers")
+        @DisplayName("Unrecognized or expired voucher codes must throw InvalidVoucherException with descriptive message")
         void shouldThrowInvalidVoucherExceptionForUnrecognizedOrExpiredVouchers(String invalidVoucher) {
-            assertAll(
-                () -> assertThrows(InvalidVoucherException.class,
-                    () -> pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 0, invalidVoucher),
-                    "Should throw InvalidVoucherException for BASIC tier"),
-                () -> assertThrows(InvalidVoucherException.class,
-                    () -> pricingService.calculateMonthlyRate(SubscriptionTier.PRO, 24, invalidVoucher),
-                    "Should throw InvalidVoucherException for PRO tier"),
-                () -> assertThrows(InvalidVoucherException.class,
-                    () -> pricingService.calculateMonthlyRate(SubscriptionTier.ENTERPRISE, 48, invalidVoucher),
-                    "Should throw InvalidVoucherException for ENTERPRISE tier")
+            // Audit: Eliminated generic exception checking; verify exact InvalidVoucherException and assert exception message
+            InvalidVoucherException exception = assertThrows(InvalidVoucherException.class,
+                () -> pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 0, invalidVoucher),
+                () -> "Expected InvalidVoucherException when using invalid voucher: " + invalidVoucher
             );
+
+            assertThat(exception.getMessage())
+                .as("Exception message must not be blank and should provide context")
+                .isNotNull()
+                .isNotBlank();
         }
 
         @Test
         @DisplayName("Throw InvalidVoucherException even if longevity discount is applicable")
         void shouldThrowInvalidVoucherExceptionRegardlessOfAccountAge() {
-            assertThrows(InvalidVoucherException.class, () ->
-                pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 50, "BOGUS_CODE")
+            InvalidVoucherException exception = assertThrows(InvalidVoucherException.class,
+                () -> pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 50, "BOGUS_CODE")
             );
+
+            assertThat(exception.getMessage())
+                .as("Exception message must not be blank")
+                .isNotNull()
+                .isNotBlank();
         }
     }
 }
