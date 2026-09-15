@@ -334,4 +334,135 @@ public class SubscriptionPricingServiceTest {
                 .isNotBlank();
         }
     }
+
+    @Nested
+    @DisplayName("7. Adversarial Boundary & Financial Integrity Analysis")
+    class AdversarialBoundaryAnalysisTests {
+
+        @Nested
+        @DisplayName("7.1 Off-by-One Longevity Boundary Inflections (All Tiers)")
+        class OffByOneLongevityThresholdTests {
+
+            @ParameterizedTest(name = "{0} at 12 mo (${1}) vs 13 mo (${2})")
+            @CsvSource({
+                "BASIC, 50.00, 45.00",
+                "PRO, 150.00, 135.00",
+                "ENTERPRISE, 500.00, 450.00"
+            })
+            @DisplayName("Verify exact step-function discount transition at 12 -> 13 months across all tiers")
+            void shouldValidateExactInflectionAtTwelveToThirteenMonths(SubscriptionTier tier, String expectedAt12, String expectedAt13) {
+                BigDecimal rateAt12 = pricingService.calculateMonthlyRate(tier, 12, null);
+                BigDecimal rateAt13 = pricingService.calculateMonthlyRate(tier, 13, null);
+
+                assertAll(
+                    () -> assertThat(rateAt12)
+                            .as("%s tier at exactly 12 months must retain 0%% base rate ($%s)", tier, expectedAt12)
+                            .isEqualByComparingTo(expectedAt12),
+                    () -> assertThat(rateAt13)
+                            .as("%s tier at exactly 13 months must receive 10%% discount ($%s)", tier, expectedAt13)
+                            .isEqualByComparingTo(expectedAt13)
+                );
+            }
+
+            @ParameterizedTest(name = "{0} at 36 mo (${1}) vs 37 mo (${2})")
+            @CsvSource({
+                "BASIC, 45.00, 37.50",
+                "PRO, 135.00, 112.50",
+                "ENTERPRISE, 450.00, 375.00"
+            })
+            @DisplayName("Verify exact step-function discount transition at 36 -> 37 months across all tiers")
+            void shouldValidateExactInflectionAtThirtySixToThirtySevenMonths(SubscriptionTier tier, String expectedAt36, String expectedAt37) {
+                BigDecimal rateAt36 = pricingService.calculateMonthlyRate(tier, 36, null);
+                BigDecimal rateAt37 = pricingService.calculateMonthlyRate(tier, 37, null);
+
+                assertAll(
+                    () -> assertThat(rateAt36)
+                            .as("%s tier at exactly 36 months must remain at 10%% rate ($%s)", tier, expectedAt36)
+                            .isEqualByComparingTo(expectedAt36),
+                    () -> assertThat(rateAt37)
+                            .as("%s tier at exactly 37 months must step down to 25%% rate ($%s)", tier, expectedAt37)
+                            .isEqualByComparingTo(expectedAt37)
+                );
+            }
+        }
+
+        @Nested
+        @DisplayName("7.2 Defensive Negative Inputs")
+        class DefensiveNegativeInputTests {
+
+            @ParameterizedTest(name = "Negative account age {0} months must throw IllegalArgumentException")
+            @ValueSource(ints = {-1, -2, -12, -36, Integer.MIN_VALUE})
+            @DisplayName("Reject negative account age boundaries to prevent corrupted tenure logic")
+            void shouldRejectNegativeAccountAgeAcrossTiers(int negativeMonths) {
+                for (SubscriptionTier tier : SubscriptionTier.values()) {
+                    IllegalArgumentException ex = assertThrows(
+                        IllegalArgumentException.class,
+                        () -> pricingService.calculateMonthlyRate(tier, negativeMonths, null),
+                        () -> String.format("Expected IllegalArgumentException for %s tier with negative age: %d", tier, negativeMonths)
+                    );
+                    assertThat(ex.getMessage())
+                        .as("Exception message should clarify negative account age violation")
+                        .contains(String.valueOf(negativeMonths));
+                }
+            }
+        }
+
+        @Nested
+        @DisplayName("7.3 Whitespace & Malformed Voucher Strings")
+        class WhitespaceAndMalformedVoucherTests {
+
+            @ParameterizedTest(name = "Malformed or untrimmed voucher ''{0}'' must be rejected")
+            @ValueSource(strings = {
+                "   ",             // Whitespace only
+                "\t",              // Tab character
+                "\n",              // Newline
+                "  SAVE20  ",      // Untrimmed valid voucher
+                "\tHALFPRICE\n",   // Control characters with voucher
+                "save20",          // Lowercase variant
+                "halfprice",       // Lowercase variant
+                "Save20",          // PascalCase variant
+                "SAVE 20",         // Internal space
+                "SAVE20\0",        // Null-byte suffix
+                "HALF PRICE"       // Internal space
+            })
+            @DisplayName("Strict voucher token validation: whitespace, malformed or casing deviations must throw InvalidVoucherException")
+            void shouldRejectMalformedOrWhitespaceVouchers(String malformedVoucher) {
+                InvalidVoucherException ex = assertThrows(
+                    InvalidVoucherException.class,
+                    () -> pricingService.calculateMonthlyRate(SubscriptionTier.BASIC, 12, malformedVoucher),
+                    () -> "Expected InvalidVoucherException for malformed voucher: " + malformedVoucher
+                );
+                assertThat(ex.getMessage()).isNotBlank();
+            }
+        }
+
+        @Nested
+        @DisplayName("7.4 Rounding Accuracy on Fractional Cents")
+        class RoundingAccuracyTests {
+
+            @ParameterizedTest(name = "{0} at {1} mo with {2} -> expected ${3}")
+            @CsvSource({
+                "BASIC, 37, HALFPRICE, 18.75",
+                "PRO, 37, HALFPRICE, 56.25",
+                "ENTERPRISE, 37, HALFPRICE, 187.50",
+                "BASIC, 24, HALFPRICE, 22.50",
+                "PRO, 24, HALFPRICE, 67.50",
+                "ENTERPRISE, 24, HALFPRICE, 225.00"
+            })
+            @DisplayName("Validate exact half-up cent precision and strict 2-decimal scale on fractional discounts")
+            void shouldVerifyHalfUpCentPrecisionAndScale(SubscriptionTier tier, int months, String voucherCode, String expectedRate) {
+                BigDecimal rate = pricingService.calculateMonthlyRate(tier, months, voucherCode);
+
+                assertAll(
+                    () -> assertThat(rate)
+                            .as("Calculated rate for %s at %d months with %s must equal %s", tier, months, voucherCode, expectedRate)
+                            .isEqualByComparingTo(expectedRate),
+                    () -> assertThat(rate.scale())
+                            .as("Scale must always strictly be 2 decimal places")
+                            .isEqualTo(2)
+                );
+            }
+        }
+    }
 }
+
